@@ -21,47 +21,80 @@ const Index = () => {
   const handleAudioReady = async (audioBlob: Blob, fileName: string) => {
     setIsProcessing(true);
     
-    // Simulate processing - in production, this would call the OpenAI API
-    toast({
-      title: "Processing audio",
-      description: "Transcribing your audio file...",
-    });
+    try {
+      toast({
+        title: "Processing audio",
+        description: "Transcribing your audio file...",
+      });
 
-    setTimeout(() => {
-      // Mock transcription
-      const mockTranscription = `This is a sample transcription of the audio file "${fileName}". In a production environment, this would be processed using OpenAI's Whisper API to convert speech to text accurately.`;
-      
-      const mockSummary = "Sample summary: The audio discusses key topics and important points that need to be addressed.";
-      
-      const mockActionItems: ActionItem[] = [
-        { id: "1", text: "Review the transcription for accuracy", completed: false },
-        { id: "2", text: "Follow up on key points discussed", completed: false },
-        { id: "3", text: "Share summary with team members", completed: false },
-      ];
+      // Convert blob to base64
+      const reader = new FileReader();
+      const base64Audio = await new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          resolve(base64.split(',')[1]); // Remove data:audio/webm;base64, prefix
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+
+      // Call edge function
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-audio`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ audio: base64Audio }),
+        }
+      );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to process audio');
+      }
+
+      const { transcription, summary, actionItems: actionItemTexts } = await response.json();
+
+      const actionItems: ActionItem[] = actionItemTexts.map((text: string, index: number) => ({
+        id: `${Date.now()}-${index}`,
+        text,
+        completed: false,
+      }));
 
       setCurrentSession({
-        transcription: mockTranscription,
-        summary: mockSummary,
-        actionItems: mockActionItems,
+        transcription,
+        summary,
+        actionItems,
       });
 
       // Save to history
       const newSession: TranscriptionSession = {
         id: Date.now().toString(),
         timestamp: new Date(),
-        transcription: mockTranscription,
-        summary: mockSummary,
-        actionItems: mockActionItems,
+        transcription,
+        summary,
+        actionItems,
       };
       
       setSessions((prev) => [newSession, ...prev]);
-      setIsProcessing(false);
 
       toast({
         title: "Processing complete",
         description: "Your audio has been transcribed successfully!",
       });
-    }, 2000);
+    } catch (error) {
+      console.error('Error processing audio:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to process audio. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleToggleActionItem = (id: string) => {
