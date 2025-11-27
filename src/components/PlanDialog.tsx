@@ -77,9 +77,15 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
 
   const userCurrentPlan = getCurrentPlanName();
 
-  const handleUpgrade = async (priceId: string | null, planName: string) => {
+  const handleUpgrade = async (priceId: string | null, planName: string, planId: string) => {
     if (!priceId) {
-      toast.info("You're already on the Free plan");
+      toast.info("Downgrading plans is not available. Please contact support.");
+      return;
+    }
+
+    // Prevent upgrade if already on a higher or equal plan
+    if (planId === currentPlan) {
+      toast.info("You're already on this plan");
       return;
     }
 
@@ -165,12 +171,16 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
                 disabled={plan.planId === currentPlan || isUpgrading}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (plan.planId !== currentPlan) {
-                    handleUpgrade(plan.priceId, plan.name);
-                  }
+                  handleUpgrade(plan.priceId, plan.name, plan.planId);
                 }}
               >
-                {isUpgrading ? "Processing..." : plan.planId === currentPlan ? "Current Plan" : plan.priceId ? "Upgrade Now" : "Current Plan"}
+                {isUpgrading 
+                  ? "Processing..." 
+                  : plan.planId === currentPlan 
+                    ? "Current Plan" 
+                    : plan.priceId 
+                      ? "Upgrade Now" 
+                      : "Contact Support"}
               </Button>
             </div>
           ))}

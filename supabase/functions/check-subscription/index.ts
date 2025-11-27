@@ -108,50 +108,23 @@ serve(async (req) => {
       try {
         logStep("Attempting to update usage_tracking", { userId: user.id, plan, maxUsage });
         
-        // First check if record exists
-        const { data: existingRecord, error: selectError } = await supabaseClient
+        // Use upsert to handle both insert and update
+        const { error: upsertError } = await supabaseClient
           .from('usage_tracking')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
+          .upsert({ 
+            user_id: user.id,
+            email: user.email,
+            plan,
+            max_usage: maxUsage,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'user_id,email'
+          });
 
-        if (selectError && selectError.code !== 'PGRST116') {
-          logStep("Error checking existing record", { error: selectError.message });
-        }
-
-        if (existingRecord) {
-          // Update existing record
-          const { error: updateError } = await supabaseClient
-            .from('usage_tracking')
-            .update({ 
-              plan,
-              max_usage: maxUsage,
-              updated_at: new Date().toISOString()
-            })
-            .eq('user_id', user.id);
-
-          if (updateError) {
-            logStep("Error updating usage_tracking", { error: updateError.message, code: updateError.code });
-          } else {
-            logStep("Usage tracking updated successfully", { plan, maxUsage });
-          }
+        if (upsertError) {
+          logStep("Error upserting usage_tracking", { error: upsertError.message, code: upsertError.code });
         } else {
-          // Create new record if it doesn't exist
-          const { error: insertError } = await supabaseClient
-            .from('usage_tracking')
-            .insert({ 
-              user_id: user.id,
-              email: user.email,
-              plan,
-              max_usage: maxUsage,
-              current_usage: 0
-            });
-
-          if (insertError) {
-            logStep("Error inserting usage_tracking", { error: insertError.message });
-          } else {
-            logStep("Usage tracking created successfully", { plan, maxUsage });
-          }
+          logStep("Usage tracking upserted successfully", { plan, maxUsage });
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);

@@ -35,6 +35,7 @@ const Index = () => {
         setUser(session.user);
         fetchUsageData(session.user.id);
         loadTranscriptions(session.user.id);
+        // Only check subscription on initial load, not repeatedly
         checkSubscription(session.user.id);
       }
     });
@@ -46,29 +47,14 @@ const Index = () => {
         setUser(session.user);
         fetchUsageData(session.user.id);
         loadTranscriptions(session.user.id);
-        checkSubscription(session.user.id);
+        // Don't call checkSubscription here - it will be called on demand
       }
     });
 
-    // Add window focus listener to refresh subscription when returning from Stripe
-    // Only check once per focus event, not continuously
-    let lastCheckTime = 0;
-    const handleFocus = () => {
-      const now = Date.now();
-      // Only check if it's been more than 60 seconds since last check
-      if (user && (now - lastCheckTime) > 60000) {
-        console.log('Window focused - checking subscription status');
-        lastCheckTime = now;
-        checkSubscription(user.id);
-      }
-    };
-    window.addEventListener('focus', handleFocus);
-
     return () => {
       subscription.unsubscribe();
-      window.removeEventListener('focus', handleFocus);
     };
-  }, [navigate, user]);
+  }, [navigate]);
 
   const checkSubscription = async (userId?: string) => {
     try {
@@ -312,12 +298,23 @@ const Index = () => {
               <Button 
                 variant="ghost" 
                 size="sm"
-                onClick={() => setShowPlanDialog(true)}
+                onClick={async () => {
+                  toast.info("Refreshing subscription status...");
+                  await checkSubscription(user?.id);
+                  toast.success("Subscription status updated");
+                }}
                 className="text-sm"
               >
                 {usageData.current_usage}/{usageData.max_usage} used
               </Button>
             )}
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowPlanDialog(true)}
+            >
+              View Plans
+            </Button>
             <HistoryDrawer sessions={sessions} onSelectSession={handleSelectSession} />
             <Button variant="outline" onClick={handleSignOut}>
               <LogOut className="w-4 h-4 mr-2" />
