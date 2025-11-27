@@ -12,6 +12,38 @@ const logStep = (step: string, details?: any) => {
   console.log(`[CREATE-CHECKOUT] ${step}${detailsStr}`);
 };
 
+// Helper function for exponential backoff
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      
+      const isRateLimitError = error?.message?.includes('rate limit') || 
+                               error?.type === 'StripeRateLimitError';
+      
+      if (!isRateLimitError || attempt === maxRetries - 1) {
+        throw error;
+      }
+      
+      const delay = initialDelay * Math.pow(2, attempt) + Math.random() * 1000;
+      logStep(`Rate limited, retrying in ${Math.round(delay)}ms`, { attempt: attempt + 1 });
+      await sleep(delay);
+    }
+  }
+  
+  throw lastError;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -40,9 +72,11 @@ serve(async (req) => {
       apiVersion: "2025-08-27.basil" 
     });
 
-    // Check if customer exists
-    const customers = await stripe.customers.list({ email: user.email, limit: 1 });
-    let customerId;
+    // Check if customer exists with retry logic
+    const customers = await retryWithBackoff(async () =>
+      await stripe.customers.list({ email: user.email, limit: 1 })
+    );
+    let customerId: string | undefined;
     if (customers.data.length > 0) {
       customerId = customers.data[0].id;
       logStep("Existing customer found", { customerId });
@@ -50,23 +84,25 @@ serve(async (req) => {
       logStep("No existing customer, will create on checkout");
     }
 
-    // Create checkout session
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      customer_email: customerId ? undefined : user.email,
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
+    // Create checkout session with retry logic
+    const session = await retryWithBackoff(async () =>
+      await stripe.checkout.sessions.create({
+        customer: customerId,
+        customer_email: customerId ? undefined : user.email,
+        line_items: [
+          {
+            price: priceId,
+            quantity: 1,
+          },
+        ],
+        mode: "subscription",
+        success_url: `${req.headers.get("origin")}/refresh-subscription`,
+        cancel_url: `${req.headers.get("origin")}/cancel`,
+        metadata: {
+          user_id: user.id,
         },
-      ],
-      mode: "subscription",
-      success_url: `${req.headers.get("origin")}/refresh-subscription`,
-      cancel_url: `${req.headers.get("origin")}/cancel`,
-      metadata: {
-        user_id: user.id,
-      },
-    });
+      })
+    );
 
     logStep("Checkout session created", { sessionId: session.id, url: session.url });
 

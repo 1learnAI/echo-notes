@@ -12,6 +12,41 @@ const logStep = (step: string, details?: any) => {
   console.log(`[CHECK-SUBSCRIPTION] ${step}${detailsStr}`);
 };
 
+// Helper function to sleep for exponential backoff
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Retry logic for Stripe API calls with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      
+      // Check if it's a rate limit error
+      const isRateLimitError = error?.message?.includes('rate limit') || 
+                               error?.type === 'StripeRateLimitError';
+      
+      if (!isRateLimitError || attempt === maxRetries - 1) {
+        throw error;
+      }
+      
+      // Exponential backoff with jitter
+      const delay = initialDelay * Math.pow(2, attempt) + Math.random() * 1000;
+      logStep(`Rate limited, retrying in ${Math.round(delay)}ms`, { attempt: attempt + 1 });
+      await sleep(delay);
+    }
+  }
+  
+  throw lastError;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -43,7 +78,11 @@ serve(async (req) => {
     logStep("User authenticated", { userId: user.id, email: user.email });
 
     const stripe = new Stripe(stripeKey, { apiVersion: "2025-08-27.basil" });
-    const customers = await stripe.customers.list({ email: user.email, limit: 1 });
+    
+    // Use retry logic for Stripe API calls
+    const customers = await retryWithBackoff(async () => 
+      await stripe.customers.list({ email: user.email, limit: 1 })
+    );
     
     if (customers.data.length === 0) {
       logStep("No customer found, returning free plan");
@@ -61,11 +100,13 @@ serve(async (req) => {
     const customerId = customers.data[0].id;
     logStep("Found Stripe customer", { customerId });
 
-    const subscriptions = await stripe.subscriptions.list({
-      customer: customerId,
-      status: "active",
-      limit: 1,
-    });
+    const subscriptions = await retryWithBackoff(async () =>
+      await stripe.subscriptions.list({
+        customer: customerId,
+        status: "active",
+        limit: 1,
+      })
+    );
     
     logStep("Subscriptions retrieved", { count: subscriptions.data.length });
     
