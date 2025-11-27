@@ -35,6 +35,7 @@ const Index = () => {
         setUser(session.user);
         fetchUsageData(session.user.id);
         loadTranscriptions(session.user.id);
+        checkSubscription();
       }
     });
 
@@ -45,11 +46,29 @@ const Index = () => {
         setUser(session.user);
         fetchUsageData(session.user.id);
         loadTranscriptions(session.user.id);
+        checkSubscription();
       }
     });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const checkSubscription = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke('check-subscription');
+      if (error) {
+        console.error('Error checking subscription:', error);
+        return;
+      }
+      console.log('Subscription status:', data);
+      // Refresh usage data to get updated plan
+      if (user) {
+        await fetchUsageData(user.id);
+      }
+    } catch (error) {
+      console.error('Error in checkSubscription:', error);
+    }
+  };
 
   const loadTranscriptions = async (userId: string) => {
     try {
@@ -112,27 +131,6 @@ const Index = () => {
     } catch (error) {
       console.error('Error in fetchUsageData:', error);
     }
-  };
-
-  const handlePlanUpgrade = async (planName: string, maxUsage: number) => {
-    if (!user) return;
-    
-    const { error } = await supabase
-      .from('usage_tracking')
-      .update({ 
-        plan: planName.toLowerCase().replace(' ', '_'), 
-        max_usage: maxUsage,
-        updated_at: new Date().toISOString() 
-      })
-      .eq('user_id', user.id);
-
-    if (error) {
-      console.error('Error updating plan:', error);
-      throw error;
-    }
-
-    // Refresh usage data
-    await fetchUsageData(user.id);
   };
 
   const handleSignOut = async () => {
@@ -300,6 +298,26 @@ const Index = () => {
                 {usageData.current_usage}/{usageData.max_usage} used
               </Button>
             )}
+            {usageData && usageData.plan !== 'free' && (
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const { data, error } = await supabase.functions.invoke('customer-portal');
+                    if (error) throw error;
+                    if (data?.url) {
+                      window.open(data.url, '_blank');
+                    }
+                  } catch (error) {
+                    console.error('Error opening portal:', error);
+                    toast.error("Failed to open subscription portal");
+                  }
+                }}
+              >
+                Manage Subscription
+              </Button>
+            )}
             <HistoryDrawer sessions={sessions} onSelectSession={handleSelectSession} />
             <Button variant="outline" onClick={handleSignOut}>
               <LogOut className="w-4 h-4 mr-2" />
@@ -350,7 +368,6 @@ const Index = () => {
         currentUsage={usageData?.current_usage || 0}
         maxUsage={usageData?.max_usage || 2}
         currentPlan={usageData?.plan || "free"}
-        onPlanUpgrade={handlePlanUpgrade}
       />
     </div>
   );
