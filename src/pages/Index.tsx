@@ -22,7 +22,7 @@ const Index = () => {
   const [sessions, setSessions] = useState<TranscriptionSession[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [usageData, setUsageData] = useState<{ current_usage: number; max_usage: number } | null>(null);
+  const [usageData, setUsageData] = useState<{ current_usage: number; max_usage: number; plan: string } | null>(null);
   const [showPlanDialog, setShowPlanDialog] = useState(false);
   const navigate = useNavigate();
 
@@ -53,7 +53,7 @@ const Index = () => {
     try {
       const { data, error } = await supabase
         .from('usage_tracking')
-        .select('current_usage, max_usage')
+        .select('current_usage, max_usage, plan')
         .eq('user_id', userId)
         .single();
 
@@ -66,8 +66,8 @@ const Index = () => {
         // Create initial usage record
         const { data: newData, error: insertError } = await supabase
           .from('usage_tracking')
-          .insert({ user_id: userId, current_usage: 0, max_usage: 2 })
-          .select('current_usage, max_usage')
+          .insert({ user_id: userId, current_usage: 0, max_usage: 2, plan: 'free' })
+          .select('current_usage, max_usage, plan')
           .single();
 
         if (insertError) {
@@ -81,6 +81,27 @@ const Index = () => {
     } catch (error) {
       console.error('Error in fetchUsageData:', error);
     }
+  };
+
+  const handlePlanUpgrade = async (planName: string, maxUsage: number) => {
+    if (!user) return;
+    
+    const { error } = await supabase
+      .from('usage_tracking')
+      .update({ 
+        plan: planName.toLowerCase().replace(' ', '_'), 
+        max_usage: maxUsage,
+        updated_at: new Date().toISOString() 
+      })
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('Error updating plan:', error);
+      throw error;
+    }
+
+    // Refresh usage data
+    await fetchUsageData(user.id);
   };
 
   const handleSignOut = async () => {
@@ -208,10 +229,15 @@ const Index = () => {
           </div>
           
           <div className="flex items-center gap-3">
-            {user && (
-              <span className="text-sm text-muted-foreground hidden sm:inline">
-                {user.email}
-              </span>
+            {user && usageData && (
+              <div className="hidden sm:flex flex-col items-end">
+                <span className="text-xs text-muted-foreground">{user.email}</span>
+                <span className="text-xs font-medium text-primary">
+                  {usageData.plan === 'free' ? 'Free Plan' : 
+                   usageData.plan === 'pro' ? 'Pro Plan' : 
+                   usageData.plan === 'pro_plus' ? 'Pro Plus Plan' : 'Free Plan'}
+                </span>
+              </div>
             )}
             {usageData && (
               <Button 
@@ -271,7 +297,8 @@ const Index = () => {
         onOpenChange={setShowPlanDialog}
         currentUsage={usageData?.current_usage || 0}
         maxUsage={usageData?.max_usage || 2}
-        currentPlan="free"
+        currentPlan={usageData?.plan || "free"}
+        onPlanUpgrade={handlePlanUpgrade}
       />
     </div>
   );
