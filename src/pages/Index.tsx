@@ -156,10 +156,6 @@ const Index = () => {
     setIsProcessing(true);
     
     try {
-      toast.loading("Processing audio", {
-        description: "Transcribing your audio file...",
-      });
-
       // Convert blob to base64
       const reader = new FileReader();
       const base64Audio = await new Promise<string>((resolve, reject) => {
