@@ -68,6 +68,7 @@ const plans = [
 
 export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, currentPlan }: PlanDialogProps) {
   const [isUpgrading, setIsUpgrading] = useState(false);
+  const [lastClickTime, setLastClickTime] = useState(0);
 
   const getCurrentPlanName = () => {
     if (currentPlan === 'pro_plus') return "Pro Plus";
@@ -78,6 +79,14 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
   const userCurrentPlan = getCurrentPlanName();
 
   const handleUpgrade = async (priceId: string | null, planName: string, planId: string) => {
+    // Debounce - prevent rapid clicks
+    const now = Date.now();
+    if (now - lastClickTime < 2000) {
+      toast.info("Please wait before trying again");
+      return;
+    }
+    setLastClickTime(now);
+
     if (!priceId) {
       toast.info("Downgrading plans is not available. Please contact support.");
       return;
@@ -89,6 +98,12 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
       return;
     }
 
+    // Prevent multiple simultaneous requests
+    if (isUpgrading) {
+      toast.info("Processing your previous request...");
+      return;
+    }
+
     setIsUpgrading(true);
     try {
       // Call create-checkout edge function
@@ -96,7 +111,14 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
         body: { priceId },
       });
 
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes('rate limit')) {
+          toast.error("Too many requests. Please wait a minute and try again.");
+        } else {
+          throw error;
+        }
+        return;
+      }
 
       if (data?.url) {
         // Open Stripe checkout in new tab

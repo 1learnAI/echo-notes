@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { toast } from "sonner";
+import { getSubscriptionCache, setSubscriptionCache, clearSubscriptionCache } from "@/lib/subscription-cache";
 
 const Index = () => {
   const [currentSession, setCurrentSession] = useState<Partial<TranscriptionSession>>({
@@ -24,6 +25,7 @@ const Index = () => {
   const [user, setUser] = useState<User | null>(null);
   const [usageData, setUsageData] = useState<{ current_usage: number; max_usage: number; plan: string } | null>(null);
   const [showPlanDialog, setShowPlanDialog] = useState(false);
+  const [isCheckingSubscription, setIsCheckingSubscription] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -56,23 +58,56 @@ const Index = () => {
     };
   }, [navigate]);
 
-  const checkSubscription = async (userId?: string) => {
+  const checkSubscription = async (userId?: string, forceRefresh: boolean = false) => {
+    // Prevent concurrent calls
+    if (isCheckingSubscription) {
+      console.log('Subscription check already in progress, skipping');
+      return;
+    }
+
+    // Check cache first unless force refresh
+    if (!forceRefresh) {
+      const cached = getSubscriptionCache();
+      if (cached) {
+        console.log('Using cached subscription status:', cached.plan);
+        return;
+      }
+    }
+
+    setIsCheckingSubscription(true);
     try {
       const { data, error } = await supabase.functions.invoke('check-subscription');
       if (error) {
         console.error('Error checking subscription:', error);
-        // Don't block the UI - just log the error
+        // If rate limited, use cached data if available
+        if (error.message?.includes('rate limit')) {
+          toast.error("Too many requests. Please wait a moment and try again.");
+          const cached = getSubscriptionCache();
+          if (cached) {
+            console.log('Rate limited, using cached subscription status');
+            return;
+          }
+        }
         return;
       }
+      
       console.log('Subscription status:', data);
-      // Refresh usage data to get updated plan
+      
+      // Cache the plan
+      if (data?.plan) {
+        setSubscriptionCache(data.plan);
+      }
+      
+      // Refresh usage data
       const userIdToUse = userId || user?.id;
       if (userIdToUse) {
         await fetchUsageData(userIdToUse);
       }
     } catch (error) {
       console.error('Error in checkSubscription:', error);
-      // Non-blocking - page should still load
+      toast.error("Error checking subscription. Please try again later.");
+    } finally {
+      setIsCheckingSubscription(false);
     }
   };
 
@@ -299,10 +334,14 @@ const Index = () => {
                 variant="ghost" 
                 size="sm"
                 onClick={async () => {
-                  toast.info("Refreshing subscription status...");
-                  await checkSubscription(user?.id);
-                  toast.success("Subscription status updated");
+                  if (isCheckingSubscription) {
+                    toast.info("Already checking subscription...");
+                    return;
+                  }
+                  clearSubscriptionCache();
+                  await checkSubscription(user?.id, true);
                 }}
+                disabled={isCheckingSubscription}
                 className="text-sm"
               >
                 {usageData.current_usage}/{usageData.max_usage} used
