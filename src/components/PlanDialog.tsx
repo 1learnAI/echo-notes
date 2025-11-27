@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
+import { toast } from "sonner";
 
 interface PlanDialogProps {
   open: boolean;
@@ -114,13 +115,16 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
               </ul>
 
               <Button
+                type="button"
                 className="w-full"
                 variant={plan.highlighted ? "default" : "outline"}
                 disabled={plan.name === userCurrentPlan}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (plan.name !== userCurrentPlan) {
-                    console.log(`Upgrading to ${plan.name}`);
-                    // TODO: Implement payment flow
+                    toast.success(`Upgrading to ${plan.name} plan`, {
+                      description: "Payment integration coming soon!"
+                    });
                   }
                 }}
               >
