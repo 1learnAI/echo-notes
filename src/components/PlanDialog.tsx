@@ -95,7 +95,7 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
       if (data?.url) {
         // Open Stripe checkout in new tab
         window.open(data.url, '_blank');
-        toast.success("Opening Stripe checkout...");
+        toast.success("Opening Stripe checkout. Your plan will update automatically after payment.");
         onOpenChange(false);
       }
     } catch (error) {

@@ -50,8 +50,28 @@ const Index = () => {
       }
     });
 
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+    // Add window focus listener to refresh subscription when returning from Stripe
+    const handleFocus = () => {
+      if (user) {
+        console.log('Window focused - checking subscription status');
+        checkSubscription(user.id);
+      }
+    };
+    window.addEventListener('focus', handleFocus);
+
+    // Also check subscription every 30 seconds
+    const interval = setInterval(() => {
+      if (user) {
+        checkSubscription(user.id);
+      }
+    }, 30000);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
+  }, [navigate, user]);
 
   const checkSubscription = async (userId?: string) => {
     try {
