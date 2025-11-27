@@ -265,6 +265,8 @@ const Index = () => {
         open={showPlanDialog}
         onOpenChange={setShowPlanDialog}
         currentUsage={usageData?.current_usage || 0}
+        maxUsage={usageData?.max_usage || 2}
+        currentPlan="free"
       />
     </div>
   );

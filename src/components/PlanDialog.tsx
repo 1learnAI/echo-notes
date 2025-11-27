@@ -6,6 +6,8 @@ interface PlanDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   currentUsage: number;
+  maxUsage: number;
+  currentPlan: string;
 }
 
 const plans = [
@@ -52,17 +54,29 @@ const plans = [
   }
 ];
 
-export function PlanDialog({ open, onOpenChange, currentUsage }: PlanDialogProps) {
+export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, currentPlan }: PlanDialogProps) {
+  const getCurrentPlanName = () => {
+    if (maxUsage === 2) return "Free";
+    if (maxUsage === 4) return "Pro";
+    return "Pro Plus";
+  };
+
+  const userCurrentPlan = getCurrentPlanName();
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-center">
-            Upgrade Your Plan
+            Plan
           </DialogTitle>
-          <p className="text-center text-muted-foreground mt-2">
-            You've used {currentUsage} audio messages. Choose a plan that fits your needs.
-          </p>
+          <div className="text-center mt-4 p-4 bg-muted rounded-lg">
+            <p className="text-sm text-muted-foreground">Current Plan</p>
+            <p className="text-xl font-semibold mt-1">{userCurrentPlan}</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {currentUsage} / {maxUsage} audio messages used
+            </p>
+          </div>
         </DialogHeader>
         
         <div className="grid md:grid-cols-3 gap-6 mt-6">
@@ -102,9 +116,9 @@ export function PlanDialog({ open, onOpenChange, currentUsage }: PlanDialogProps
               <Button
                 className="w-full"
                 variant={plan.highlighted ? "default" : "outline"}
-                disabled={plan.name === "Free"}
+                disabled={plan.name === userCurrentPlan}
               >
-                {plan.name === "Free" ? "Current Plan" : "Upgrade Now"}
+                {plan.name === userCurrentPlan ? "Current Plan" : "Upgrade Now"}
               </Button>
             </div>
           ))}
