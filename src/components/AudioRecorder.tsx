@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Mic, Square, Upload } from "lucide-react";
+import { Mic, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -19,7 +19,6 @@ export const AudioRecorder = ({ onAudioReady, isProcessing }: AudioRecorderProps
   const animationRef = useRef<number | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -105,21 +104,6 @@ export const AudioRecorder = ({ onAudioReady, isProcessing }: AudioRecorderProps
     animationRef.current = requestAnimationFrame(updateAudioLevel);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.type.startsWith("audio/")) {
-        onAudioReady(file, file.name);
-      } else {
-        toast({
-          title: "Invalid file",
-          description: "Please upload an audio file",
-          variant: "destructive",
-        });
-      }
-    }
-  };
-
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -163,47 +147,27 @@ export const AudioRecorder = ({ onAudioReady, isProcessing }: AudioRecorderProps
         )}
       </div>
 
-      <div className="flex gap-3 mt-4">
-        <Button
-          size="lg"
-          onClick={isRecording ? stopRecording : startRecording}
-          disabled={isProcessing}
-          className={cn(
-            "min-w-[140px]",
-            isRecording && "bg-recording hover:bg-recording/90"
-          )}
-        >
-          {isRecording ? (
-            <>
-              <Square className="w-4 h-4 mr-2" />
-              Stop Recording
-            </>
-          ) : (
-            <>
-              <Mic className="w-4 h-4 mr-2" />
-              Start Recording
-            </>
-          )}
-        </Button>
-
-        <Button
-          size="lg"
-          variant="outline"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isProcessing || isRecording}
-        >
-          <Upload className="w-4 h-4 mr-2" />
-          Upload File
-        </Button>
-      </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="audio/*"
-        onChange={handleFileUpload}
-        className="hidden"
-      />
+      <Button
+        size="lg"
+        onClick={isRecording ? stopRecording : startRecording}
+        disabled={isProcessing}
+        className={cn(
+          "min-w-[140px] mt-4",
+          isRecording && "bg-recording hover:bg-recording/90"
+        )}
+      >
+        {isRecording ? (
+          <>
+            <Square className="w-4 h-4 mr-2" />
+            Stop Recording
+          </>
+        ) : (
+          <>
+            <Mic className="w-4 h-4 mr-2" />
+            Start Recording
+          </>
+        )}
+      </Button>
     </div>
   );
 };
