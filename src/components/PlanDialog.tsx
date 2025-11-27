@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
+import { useState } from "react";
 
 interface PlanDialogProps {
   open: boolean;
@@ -9,6 +10,7 @@ interface PlanDialogProps {
   currentUsage: number;
   maxUsage: number;
   currentPlan: string;
+  onPlanUpgrade: (planName: string, maxUsage: number) => Promise<void>;
 }
 
 const plans = [
@@ -17,6 +19,7 @@ const plans = [
     price: "$0",
     period: "forever",
     limit: "2 audio messages",
+    maxUsage: 2,
     features: [
       "2 audio transcriptions per month",
       "AI-powered summaries",
@@ -29,6 +32,7 @@ const plans = [
     price: "$9",
     period: "/month",
     limit: "4 audio messages",
+    maxUsage: 4,
     features: [
       "4 audio transcriptions per month",
       "AI-powered summaries",
@@ -43,6 +47,7 @@ const plans = [
     price: "$19",
     period: "/month",
     limit: "Unlimited audio messages",
+    maxUsage: 999,
     features: [
       "Unlimited audio transcriptions",
       "AI-powered summaries",
@@ -55,7 +60,9 @@ const plans = [
   }
 ];
 
-export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, currentPlan }: PlanDialogProps) {
+export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, currentPlan, onPlanUpgrade }: PlanDialogProps) {
+  const [isUpgrading, setIsUpgrading] = useState(false);
+
   const getCurrentPlanName = () => {
     if (maxUsage === 2) return "Free";
     if (maxUsage === 4) return "Pro";
@@ -63,6 +70,23 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
   };
 
   const userCurrentPlan = getCurrentPlanName();
+
+  const handleUpgrade = async (planName: string, planMaxUsage: number) => {
+    setIsUpgrading(true);
+    try {
+      await onPlanUpgrade(planName, planMaxUsage);
+      toast.success(`Successfully upgraded to ${planName} plan!`, {
+        description: `You now have ${planMaxUsage === 999 ? 'unlimited' : planMaxUsage} audio messages per month.`
+      });
+      onOpenChange(false);
+    } catch (error) {
+      toast.error("Failed to upgrade plan", {
+        description: "Please try again later."
+      });
+    } finally {
+      setIsUpgrading(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -118,17 +142,15 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
                 type="button"
                 className="w-full"
                 variant={plan.highlighted ? "default" : "outline"}
-                disabled={plan.name === userCurrentPlan}
+                disabled={plan.name === userCurrentPlan || isUpgrading}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (plan.name !== userCurrentPlan) {
-                    toast.success(`Upgrading to ${plan.name} plan`, {
-                      description: "Payment integration coming soon!"
-                    });
+                    handleUpgrade(plan.name, plan.maxUsage);
                   }
                 }}
               >
-                {plan.name === userCurrentPlan ? "Current Plan" : "Upgrade Now"}
+                {isUpgrading ? "Upgrading..." : plan.name === userCurrentPlan ? "Current Plan" : "Upgrade Now"}
               </Button>
             </div>
           ))}
