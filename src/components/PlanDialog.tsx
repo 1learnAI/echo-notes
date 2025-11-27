@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PlanDialogProps {
   open: boolean;
@@ -10,16 +11,17 @@ interface PlanDialogProps {
   currentUsage: number;
   maxUsage: number;
   currentPlan: string;
-  onPlanUpgrade: (planName: string, maxUsage: number) => Promise<void>;
 }
 
 const plans = [
   {
     name: "Free",
+    planId: "free",
     price: "$0",
     period: "forever",
     limit: "2 audio messages",
     maxUsage: 2,
+    priceId: null,
     features: [
       "2 audio transcriptions per month",
       "AI-powered summaries",
@@ -29,14 +31,16 @@ const plans = [
   },
   {
     name: "Pro",
+    planId: "pro",
     price: "$9",
     period: "/month",
     limit: "4 audio messages",
     maxUsage: 4,
+    priceId: "price_1SXhR7PAM5xgslVz8L2vxNpJ",
     features: [
       "4 audio transcriptions per month",
-      "AI-powered summaries",
-      "Action items extraction",
+      "AI-powered summaries with priority",
+      "Action items with categories",
       "Full history access",
       "Priority processing"
     ],
@@ -44,14 +48,16 @@ const plans = [
   },
   {
     name: "Pro Plus",
+    planId: "pro_plus",
     price: "$19",
     period: "/month",
     limit: "Unlimited audio messages",
-    maxUsage: 999,
+    maxUsage: 999999,
+    priceId: "price_1SXhRYPAM5xgslVzgQAII7pI",
     features: [
       "Unlimited audio transcriptions",
-      "AI-powered summaries",
-      "Action items extraction",
+      "AI-powered summaries with priority",
+      "Action items with categories",
       "Full history access",
       "Priority processing",
       "Advanced analytics",
@@ -60,27 +66,41 @@ const plans = [
   }
 ];
 
-export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, currentPlan, onPlanUpgrade }: PlanDialogProps) {
+export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, currentPlan }: PlanDialogProps) {
   const [isUpgrading, setIsUpgrading] = useState(false);
 
   const getCurrentPlanName = () => {
-    if (maxUsage === 2) return "Free";
-    if (maxUsage === 4) return "Pro";
-    return "Pro Plus";
+    if (currentPlan === 'pro_plus') return "Pro Plus";
+    if (currentPlan === 'pro') return "Pro";
+    return "Free";
   };
 
   const userCurrentPlan = getCurrentPlanName();
 
-  const handleUpgrade = async (planName: string, planMaxUsage: number) => {
+  const handleUpgrade = async (priceId: string | null, planName: string) => {
+    if (!priceId) {
+      toast.info("You're already on the Free plan");
+      return;
+    }
+
     setIsUpgrading(true);
     try {
-      await onPlanUpgrade(planName, planMaxUsage);
-      toast.success(`Successfully upgraded to ${planName} plan!`, {
-        description: `You now have ${planMaxUsage === 999 ? 'unlimited' : planMaxUsage} audio messages per month.`
+      // Call create-checkout edge function
+      const { data, error } = await supabase.functions.invoke('create-checkout', {
+        body: { priceId },
       });
-      onOpenChange(false);
+
+      if (error) throw error;
+
+      if (data?.url) {
+        // Open Stripe checkout in new tab
+        window.open(data.url, '_blank');
+        toast.success("Opening Stripe checkout...");
+        onOpenChange(false);
+      }
     } catch (error) {
-      toast.error("Failed to upgrade plan", {
+      console.error('Error starting checkout:', error);
+      toast.error("Failed to start checkout", {
         description: "Please try again later."
       });
     } finally {
@@ -142,22 +162,22 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
                 type="button"
                 className="w-full"
                 variant={plan.highlighted ? "default" : "outline"}
-                disabled={plan.name === userCurrentPlan || isUpgrading}
+                disabled={plan.planId === currentPlan || isUpgrading}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (plan.name !== userCurrentPlan) {
-                    handleUpgrade(plan.name, plan.maxUsage);
+                  if (plan.planId !== currentPlan) {
+                    handleUpgrade(plan.priceId, plan.name);
                   }
                 }}
               >
-                {isUpgrading ? "Upgrading..." : plan.name === userCurrentPlan ? "Current Plan" : "Upgrade Now"}
+                {isUpgrading ? "Processing..." : plan.planId === currentPlan ? "Current Plan" : plan.priceId ? "Upgrade Now" : "Current Plan"}
               </Button>
             </div>
           ))}
         </div>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
-          All plans reset monthly. Cancel anytime.
+          All plans are billed monthly via Stripe. Cancel anytime through your subscription portal.
         </p>
       </DialogContent>
     </Dialog>
