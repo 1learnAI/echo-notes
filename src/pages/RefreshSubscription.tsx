@@ -10,18 +10,23 @@ const RefreshSubscription = () => {
   useEffect(() => {
     const refreshAndRedirect = async () => {
       try {
-        // Wait a moment for Stripe to process
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for Stripe to process the payment
+        await new Promise(resolve => setTimeout(resolve, 3000));
         
-        // Check subscription status
-        await supabase.functions.invoke('check-subscription');
+        // Check subscription status to update the database
+        const { error } = await supabase.functions.invoke('check-subscription');
         
-        toast.success("Subscription updated successfully!");
+        if (error) {
+          console.error("Error refreshing subscription:", error);
+          toast.info("Please refresh the page to see your updated plan");
+        } else {
+          toast.success("Subscription updated successfully!");
+        }
       } catch (error) {
         console.error("Error refreshing subscription:", error);
         toast.info("Please refresh the page to see your updated plan");
       } finally {
-        // Redirect to home
+        // Always redirect to home
         navigate("/");
       }
     };
