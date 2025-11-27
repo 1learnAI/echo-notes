@@ -4,16 +4,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 interface TranscriptionDisplayProps {
   transcription: string;
+  title?: string;
   isLoading: boolean;
 }
 
-export const TranscriptionDisplay = ({ transcription, isLoading }: TranscriptionDisplayProps) => {
+export const TranscriptionDisplay = ({ transcription, title, isLoading }: TranscriptionDisplayProps) => {
   return (
     <Card className="shadow-md">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <FileText className="w-5 h-5 text-primary" />
           Transcription
+          {title && <span className="text-sm font-normal text-muted-foreground ml-2">- {title}</span>}
         </CardTitle>
       </CardHeader>
       <CardContent>

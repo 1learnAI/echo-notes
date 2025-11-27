@@ -64,6 +64,12 @@ export const HistoryDrawer = ({ sessions, onSelectSession }: HistoryDrawerProps)
                     </Badge>
                   </div>
                   
+                  {session.title && (
+                    <h3 className="text-base font-semibold text-foreground mb-2 group-hover:text-primary transition-colors">
+                      {session.title}
+                    </h3>
+                  )}
+                  
                   <p className="text-sm text-foreground line-clamp-2 mb-3 group-hover:text-primary transition-colors">
                     {session.transcription || "No transcription"}
                   </p>
