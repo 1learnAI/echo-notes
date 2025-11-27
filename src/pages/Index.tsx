@@ -5,12 +5,13 @@ import { TranscriptionDisplay } from "@/components/TranscriptionDisplay";
 import { SummaryDisplay } from "@/components/SummaryDisplay";
 import { ActionItemsList } from "@/components/ActionItemsList";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
+import { PlanDialog } from "@/components/PlanDialog";
 import { TranscriptionSession, ActionItem } from "@/types/audio";
-import { useToast } from "@/hooks/use-toast";
 import { Headphones, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { toast } from "sonner";
 
 const Index = () => {
   const [currentSession, setCurrentSession] = useState<Partial<TranscriptionSession>>({
@@ -21,7 +22,8 @@ const Index = () => {
   const [sessions, setSessions] = useState<TranscriptionSession[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const { toast } = useToast();
+  const [usageData, setUsageData] = useState<{ current_usage: number; max_usage: number } | null>(null);
+  const [showPlanDialog, setShowPlanDialog] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -31,6 +33,7 @@ const Index = () => {
         navigate("/auth");
       } else {
         setUser(session.user);
+        fetchUsageData(session.user.id);
       }
     });
 
@@ -39,11 +42,46 @@ const Index = () => {
         navigate("/auth");
       } else {
         setUser(session.user);
+        fetchUsageData(session.user.id);
       }
     });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const fetchUsageData = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('usage_tracking')
+        .select('current_usage, max_usage')
+        .eq('user_id', userId)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching usage:', error);
+        return;
+      }
+
+      if (!data) {
+        // Create initial usage record
+        const { data: newData, error: insertError } = await supabase
+          .from('usage_tracking')
+          .insert({ user_id: userId, current_usage: 0, max_usage: 2 })
+          .select('current_usage, max_usage')
+          .single();
+
+        if (insertError) {
+          console.error('Error creating usage record:', insertError);
+          return;
+        }
+        setUsageData(newData);
+      } else {
+        setUsageData(data);
+      }
+    } catch (error) {
+      console.error('Error in fetchUsageData:', error);
+    }
+  };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -51,11 +89,22 @@ const Index = () => {
   };
 
   const handleAudioReady = async (audioBlob: Blob, fileName: string) => {
+    if (!user) {
+      toast.error("Please sign in to use this feature");
+      return;
+    }
+
+    // Check usage limits
+    if (usageData && usageData.current_usage >= usageData.max_usage) {
+      setShowPlanDialog(true);
+      toast.error("You've reached your usage limit. Please upgrade your plan.");
+      return;
+    }
+
     setIsProcessing(true);
     
     try {
-      toast({
-        title: "Processing audio",
+      toast.loading("Processing audio", {
         description: "Transcribing your audio file...",
       });
 
@@ -103,18 +152,22 @@ const Index = () => {
       };
       
       setSessions((prev) => [newSession, ...prev]);
+      
+      // Update usage count
+      if (usageData && user) {
+        const newUsage = usageData.current_usage + 1;
+        await supabase
+          .from('usage_tracking')
+          .update({ current_usage: newUsage, updated_at: new Date().toISOString() })
+          .eq('user_id', user.id);
+        
+        setUsageData({ ...usageData, current_usage: newUsage });
+      }
 
-      toast({
-        title: "Processing complete",
-        description: "Your audio has been transcribed successfully!",
-      });
+      toast.success("Audio transcribed successfully!");
     } catch (error) {
       console.error('Error processing audio:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to process audio. Please try again.",
-        variant: "destructive",
-      });
+      toast.error(error instanceof Error ? error.message : "Failed to process audio. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -136,10 +189,7 @@ const Index = () => {
       actionItems: session.actionItems,
     });
     
-    toast({
-      title: "Session loaded",
-      description: "Previous session has been restored",
-    });
+    toast.success("Previous session has been restored");
   };
 
   return (
@@ -158,6 +208,16 @@ const Index = () => {
           </div>
           
           <div className="flex items-center gap-3">
+            {usageData && (
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowPlanDialog(true)}
+                className="text-sm"
+              >
+                {usageData.current_usage}/{usageData.max_usage} used
+              </Button>
+            )}
             <HistoryDrawer sessions={sessions} onSelectSession={handleSelectSession} />
             <Button variant="outline" onClick={handleSignOut}>
               <LogOut className="w-4 h-4 mr-2" />
@@ -200,6 +260,12 @@ const Index = () => {
           </section>
         </div>
       </main>
+
+      <PlanDialog
+        open={showPlanDialog}
+        onOpenChange={setShowPlanDialog}
+        currentUsage={usageData?.current_usage || 0}
+      />
     </div>
   );
 };
