@@ -34,6 +34,7 @@ const Index = () => {
       } else {
         setUser(session.user);
         fetchUsageData(session.user.id);
+        loadTranscriptions(session.user.id);
       }
     });
 
@@ -43,11 +44,41 @@ const Index = () => {
       } else {
         setUser(session.user);
         fetchUsageData(session.user.id);
+        loadTranscriptions(session.user.id);
       }
     });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const loadTranscriptions = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('transcriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error loading transcriptions:', error);
+        return;
+      }
+
+      if (data) {
+        const loadedSessions: TranscriptionSession[] = data.map(item => ({
+          id: item.id,
+          timestamp: new Date(item.created_at),
+          transcription: item.transcription,
+          summary: item.summary || '',
+          title: item.title || undefined,
+          actionItems: Array.isArray(item.action_items) ? item.action_items : [],
+        }));
+        setSessions(loadedSessions);
+      }
+    } catch (error) {
+      console.error('Error in loadTranscriptions:', error);
+    }
+  };
 
   const fetchUsageData = async (userId: string) => {
     try {
@@ -142,37 +173,61 @@ const Index = () => {
 
       // Call edge function using Supabase client
       const { data, error } = await supabase.functions.invoke('transcribe-audio', {
-        body: { audio: base64Audio },
+        body: { 
+          audio: base64Audio,
+          plan: usageData?.plan || 'free'
+        },
       });
 
       if (error) {
         throw new Error(error.message || 'Failed to process audio');
       }
 
-      const { transcription, summary, actionItems: actionItemTexts } = data;
+      const { transcription, summary, title, actionItems: actionItemsData } = data;
 
-      const actionItems: ActionItem[] = actionItemTexts.map((text: string, index: number) => ({
+      const actionItems: ActionItem[] = actionItemsData.map((item: any, index: number) => ({
         id: `${Date.now()}-${index}`,
-        text,
+        text: typeof item === 'string' ? item : item.text,
         completed: false,
+        priority: item.priority || undefined,
+        category: item.category || undefined,
       }));
 
       setCurrentSession({
         transcription,
         summary,
+        title,
         actionItems,
       });
 
-      // Save to history
-      const newSession: TranscriptionSession = {
-        id: Date.now().toString(),
-        timestamp: new Date(),
-        transcription,
-        summary,
-        actionItems,
-      };
-      
-      setSessions((prev) => [newSession, ...prev]);
+      // Save to Supabase
+      const { data: savedTranscription, error: saveError } = await supabase
+        .from('transcriptions')
+        .insert({
+          user_id: user.id,
+          transcription,
+          summary,
+          title,
+          action_items: actionItems,
+        })
+        .select()
+        .single();
+
+      if (saveError) {
+        console.error('Error saving transcription:', saveError);
+      } else if (savedTranscription) {
+        // Add to sessions list
+        const newSession: TranscriptionSession = {
+          id: savedTranscription.id,
+          timestamp: new Date(savedTranscription.created_at),
+          transcription,
+          summary,
+          title,
+          actionItems,
+        };
+        
+        setSessions((prev) => [newSession, ...prev]);
+      }
       
       // Update usage count
       if (usageData && user) {
@@ -274,6 +329,7 @@ const Index = () => {
             <div className="md:col-span-2">
               <TranscriptionDisplay
                 transcription={currentSession.transcription || ""}
+                title={currentSession.title}
                 isLoading={isProcessing}
               />
             </div>

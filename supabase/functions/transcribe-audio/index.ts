@@ -43,7 +43,7 @@ serve(async (req) => {
 
   try {
     console.log('Starting transcription request...');
-    const { audio } = await req.json();
+    const { audio, plan } = await req.json();
     
     if (!audio) {
       throw new Error('No audio data provided');
@@ -53,6 +53,8 @@ serve(async (req) => {
     if (!openAIApiKey) {
       throw new Error('OpenAI API key not configured');
     }
+
+    const isPro = plan === 'pro' || plan === 'pro_plus';
 
     console.log('Processing audio data...');
     // Process audio in chunks
@@ -84,8 +86,8 @@ serve(async (req) => {
     const transcription = transcriptionResult.text;
     console.log('Transcription complete:', transcription.substring(0, 100) + '...');
 
-    // Generate summary using GPT
-    console.log('Generating summary...');
+    // Generate summary and title using GPT
+    console.log('Generating summary and title...');
     const summaryResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -97,15 +99,15 @@ serve(async (req) => {
         messages: [
           { 
             role: 'system', 
-            content: 'You are a helpful assistant that creates concise summaries of transcribed audio. Focus on key points and main ideas.' 
+            content: 'You are a helpful assistant that creates concise summaries and short titles for transcribed audio. Return a JSON object with "title" (3-5 words) and "summary" (concise summary) fields.' 
           },
           { 
             role: 'user', 
-            content: `Please provide a concise summary of the following transcription:\n\n${transcription}` 
+            content: `Please provide a 3-5 word title and concise summary for the following transcription:\n\n${transcription}` 
           }
         ],
         temperature: 0.7,
-        max_tokens: 300,
+        max_tokens: 400,
       }),
     });
 
@@ -116,11 +118,32 @@ serve(async (req) => {
     }
 
     const summaryResult = await summaryResponse.json();
-    const summary = summaryResult.choices[0].message.content;
-    console.log('Summary generated');
+    let title = '';
+    let summary = '';
+    
+    try {
+      const content = JSON.parse(summaryResult.choices[0].message.content);
+      title = content.title || '';
+      summary = content.summary || '';
+    } catch (e) {
+      console.error('Error parsing summary/title:', e);
+      summary = summaryResult.choices[0].message.content;
+      // Generate a simple title from first few words
+      title = transcription.split(' ').slice(0, 4).join(' ');
+    }
+    
+    console.log('Summary and title generated');
 
     // Generate action items using GPT
     console.log('Generating action items...');
+    const actionItemsSystemPrompt = isPro 
+      ? 'You are a helpful assistant that extracts actionable tasks from transcribed audio. For each task, assign a Priority (High/Medium/Low) and Category (Work/Personal/Follow-Up/Idea). Return only a JSON array of objects with "text", "priority", and "category" fields, nothing else.'
+      : 'You are a helpful assistant that extracts actionable tasks from transcribed audio. Return only a JSON array of action items as strings, nothing else.';
+    
+    const actionItemsUserPrompt = isPro
+      ? `Extract actionable tasks from this transcription. For each task, assign Priority (High/Medium/Low) and Category (Work/Personal/Follow-Up/Idea). Return as JSON array:\n\n${transcription}`
+      : `Extract actionable tasks from this transcription as a JSON array of strings:\n\n${transcription}`;
+
     const actionItemsResponse = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -132,15 +155,15 @@ serve(async (req) => {
         messages: [
           { 
             role: 'system', 
-            content: 'You are a helpful assistant that extracts actionable tasks from transcribed audio. Return only a JSON array of action items as strings, nothing else.' 
+            content: actionItemsSystemPrompt
           },
           { 
             role: 'user', 
-            content: `Extract actionable tasks from this transcription as a JSON array of strings:\n\n${transcription}` 
+            content: actionItemsUserPrompt
           }
         ],
         temperature: 0.5,
-        max_tokens: 200,
+        max_tokens: 300,
       }),
     });
 
@@ -151,7 +174,7 @@ serve(async (req) => {
     }
 
     const actionItemsResult = await actionItemsResponse.json();
-    let actionItems: string[] = [];
+    let actionItems: any[] = [];
     
     try {
       const content = actionItemsResult.choices[0].message.content;
@@ -169,7 +192,8 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         transcription, 
-        summary, 
+        summary,
+        title,
         actionItems 
       }),
       { 
