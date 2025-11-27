@@ -85,7 +85,7 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
               key={plan.name}
               className={`relative rounded-lg border p-6 ${
                 plan.highlighted
-                  ? "border-primary shadow-lg scale-105"
+                  ? "border-primary shadow-lg"
                   : "border-border"
               }`}
             >
@@ -117,6 +117,12 @@ export function PlanDialog({ open, onOpenChange, currentUsage, maxUsage, current
                 className="w-full"
                 variant={plan.highlighted ? "default" : "outline"}
                 disabled={plan.name === userCurrentPlan}
+                onClick={() => {
+                  if (plan.name !== userCurrentPlan) {
+                    console.log(`Upgrading to ${plan.name}`);
+                    // TODO: Implement payment flow
+                  }
+                }}
               >
                 {plan.name === userCurrentPlan ? "Current Plan" : "Upgrade Now"}
               </Button>

@@ -208,6 +208,11 @@ const Index = () => {
           </div>
           
           <div className="flex items-center gap-3">
+            {user && (
+              <span className="text-sm text-muted-foreground hidden sm:inline">
+                {user.email}
+              </span>
+            )}
             {usageData && (
               <Button 
                 variant="ghost" 
