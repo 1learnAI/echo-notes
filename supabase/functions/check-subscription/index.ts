@@ -66,6 +66,9 @@ serve(async (req) => {
       status: "active",
       limit: 1,
     });
+    
+    logStep("Subscriptions retrieved", { count: subscriptions.data.length });
+    
     const hasActiveSub = subscriptions.data.length > 0;
     let productId = null;
     let subscriptionEnd = null;
@@ -73,7 +76,17 @@ serve(async (req) => {
 
     if (hasActiveSub) {
       const subscription = subscriptions.data[0];
-      subscriptionEnd = new Date(subscription.current_period_end * 1000).toISOString();
+      
+      // Safely handle the subscription end date
+      try {
+        if (subscription.current_period_end) {
+          subscriptionEnd = new Date(subscription.current_period_end * 1000).toISOString();
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logStep("Error parsing subscription end date", { error: errorMessage });
+      }
+      
       productId = subscription.items.data[0].price.product as string;
       logStep("Active subscription found", { 
         subscriptionId: subscription.id, 
@@ -91,19 +104,25 @@ serve(async (req) => {
 
       // Update usage_tracking table with new plan
       const maxUsage = plan === 'pro' ? 4 : plan === 'pro_plus' ? 999999 : 2;
-      const { error: updateError } = await supabaseClient
-        .from('usage_tracking')
-        .update({ 
-          plan,
-          max_usage: maxUsage,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', user.id);
+      
+      try {
+        const { error: updateError } = await supabaseClient
+          .from('usage_tracking')
+          .update({ 
+            plan,
+            max_usage: maxUsage,
+            updated_at: new Date().toISOString()
+          })
+          .eq('user_id', user.id);
 
-      if (updateError) {
-        logStep("Error updating usage_tracking", { error: updateError });
-      } else {
-        logStep("Usage tracking updated", { plan, maxUsage });
+        if (updateError) {
+          logStep("Error updating usage_tracking", { error: updateError.message });
+        } else {
+          logStep("Usage tracking updated", { plan, maxUsage });
+        }
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        logStep("Exception updating usage_tracking", { error: errorMessage });
       }
     } else {
       logStep("No active subscription found");
