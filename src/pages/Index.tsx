@@ -51,25 +51,22 @@ const Index = () => {
     });
 
     // Add window focus listener to refresh subscription when returning from Stripe
+    // Only check once per focus event, not continuously
+    let lastCheckTime = 0;
     const handleFocus = () => {
-      if (user) {
+      const now = Date.now();
+      // Only check if it's been more than 60 seconds since last check
+      if (user && (now - lastCheckTime) > 60000) {
         console.log('Window focused - checking subscription status');
+        lastCheckTime = now;
         checkSubscription(user.id);
       }
     };
     window.addEventListener('focus', handleFocus);
 
-    // Also check subscription every 30 seconds
-    const interval = setInterval(() => {
-      if (user) {
-        checkSubscription(user.id);
-      }
-    }, 30000);
-
     return () => {
       subscription.unsubscribe();
       window.removeEventListener('focus', handleFocus);
-      clearInterval(interval);
     };
   }, [navigate, user]);
 
@@ -78,6 +75,7 @@ const Index = () => {
       const { data, error } = await supabase.functions.invoke('check-subscription');
       if (error) {
         console.error('Error checking subscription:', error);
+        // Don't block the UI - just log the error
         return;
       }
       console.log('Subscription status:', data);
@@ -88,6 +86,7 @@ const Index = () => {
       }
     } catch (error) {
       console.error('Error in checkSubscription:', error);
+      // Non-blocking - page should still load
     }
   };
 
