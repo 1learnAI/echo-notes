@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { AudioRecorder } from "@/components/AudioRecorder";
 import { TranscriptionDisplay } from "@/components/TranscriptionDisplay";
 import { SummaryDisplay } from "@/components/SummaryDisplay";
@@ -6,7 +7,10 @@ import { ActionItemsList } from "@/components/ActionItemsList";
 import { HistoryDrawer } from "@/components/HistoryDrawer";
 import { TranscriptionSession, ActionItem } from "@/types/audio";
 import { useToast } from "@/hooks/use-toast";
-import { Headphones } from "lucide-react";
+import { Headphones, LogOut } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 const Index = () => {
   const [currentSession, setCurrentSession] = useState<Partial<TranscriptionSession>>({
@@ -16,7 +20,35 @@ const Index = () => {
   });
   const [sessions, setSessions] = useState<TranscriptionSession[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
   const { toast } = useToast();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check auth status
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        navigate("/auth");
+      } else {
+        setUser(session.user);
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!session) {
+        navigate("/auth");
+      } else {
+        setUser(session.user);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
+  };
 
   const handleAudioReady = async (audioBlob: Blob, fileName: string) => {
     setIsProcessing(true);
@@ -38,25 +70,16 @@ const Index = () => {
         reader.readAsDataURL(audioBlob);
       });
 
-      // Call edge function
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/transcribe-audio`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          },
-          body: JSON.stringify({ audio: base64Audio }),
-        }
-      );
+      // Call edge function using Supabase client
+      const { data, error } = await supabase.functions.invoke('transcribe-audio', {
+        body: { audio: base64Audio },
+      });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to process audio');
+      if (error) {
+        throw new Error(error.message || 'Failed to process audio');
       }
 
-      const { transcription, summary, actionItems: actionItemTexts } = await response.json();
+      const { transcription, summary, actionItems: actionItemTexts } = data;
 
       const actionItems: ActionItem[] = actionItemTexts.map((text: string, index: number) => ({
         id: `${Date.now()}-${index}`,
@@ -134,7 +157,13 @@ const Index = () => {
             </div>
           </div>
           
-          <HistoryDrawer sessions={sessions} onSelectSession={handleSelectSession} />
+          <div className="flex items-center gap-3">
+            <HistoryDrawer sessions={sessions} onSelectSession={handleSelectSession} />
+            <Button variant="outline" onClick={handleSignOut}>
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign Out
+            </Button>
+          </div>
         </div>
       </header>
 
