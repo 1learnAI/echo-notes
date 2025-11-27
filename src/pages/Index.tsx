@@ -35,7 +35,7 @@ const Index = () => {
         setUser(session.user);
         fetchUsageData(session.user.id);
         loadTranscriptions(session.user.id);
-        checkSubscription();
+        checkSubscription(session.user.id);
       }
     });
 
@@ -46,14 +46,14 @@ const Index = () => {
         setUser(session.user);
         fetchUsageData(session.user.id);
         loadTranscriptions(session.user.id);
-        checkSubscription();
+        checkSubscription(session.user.id);
       }
     });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
 
-  const checkSubscription = async () => {
+  const checkSubscription = async (userId?: string) => {
     try {
       const { data, error } = await supabase.functions.invoke('check-subscription');
       if (error) {
@@ -62,8 +62,9 @@ const Index = () => {
       }
       console.log('Subscription status:', data);
       // Refresh usage data to get updated plan
-      if (user) {
-        await fetchUsageData(user.id);
+      const userIdToUse = userId || user?.id;
+      if (userIdToUse) {
+        await fetchUsageData(userIdToUse);
       }
     } catch (error) {
       console.error('Error in checkSubscription:', error);
@@ -296,26 +297,6 @@ const Index = () => {
                 className="text-sm"
               >
                 {usageData.current_usage}/{usageData.max_usage} used
-              </Button>
-            )}
-            {usageData && usageData.plan !== 'free' && (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={async () => {
-                  try {
-                    const { data, error } = await supabase.functions.invoke('customer-portal');
-                    if (error) throw error;
-                    if (data?.url) {
-                      window.open(data.url, '_blank');
-                    }
-                  } catch (error) {
-                    console.error('Error opening portal:', error);
-                    toast.error("Failed to open subscription portal");
-                  }
-                }}
-              >
-                Manage Subscription
               </Button>
             )}
             <HistoryDrawer sessions={sessions} onSelectSession={handleSelectSession} />
